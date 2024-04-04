@@ -15,6 +15,7 @@ from nerf import (CfgNode, get_embedding_function, get_ray_bundle, img2mse,
                   mse2psnr, run_one_iter_of_nerf)
 
 
+
 def main():
 
     parser = argparse.ArgumentParser()
@@ -98,6 +99,8 @@ def main():
         device = "cuda"
     else:
         device = "cpu"
+    print(device)
+    
 
     encode_position_fn = get_embedding_function(
         num_encoding_functions=cfg.models.coarse.num_encoding_fn_xyz,
