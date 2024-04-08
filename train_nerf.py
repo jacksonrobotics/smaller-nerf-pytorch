@@ -14,8 +14,6 @@ from nerf import (CfgNode, get_embedding_function, get_ray_bundle, img2mse,
                   load_blender_data, load_llff_data, meshgrid_xy, models,
                   mse2psnr, run_one_iter_of_nerf)
 
-
-
 def main():
 
     parser = argparse.ArgumentParser()
@@ -183,6 +181,7 @@ def main():
                 ray_bundle[0].reshape((-1, 3)),
                 ray_bundle[1].reshape((-1, 3)),
             )
+            
             target_ray_values = cache_dict["target"][..., :3].reshape((-1, 3))
             select_inds = np.random.choice(
                 ray_origins.shape[0],
