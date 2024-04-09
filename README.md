@@ -89,6 +89,13 @@ The training script can be invoked by running
 python train_nerf.py --config config/lego.yml
 ```
 
+### Optional: Prune after training
+
+To prune post-train:
+```bash
+python train_nerf.py --config config/lego.yml --load-checkpoint path/to/checkpoint.ckpt --prune
+```
+
 ### Optional: Resume training from a checkpoint
 
 Optionally, if resuming training from a previous checkpoint, run
