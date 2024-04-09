@@ -7,13 +7,13 @@ experiment:
   # Seed for random number generators (for repeatability).
   randomseed: 42  # Cause, why not?
   # Number of training iterations.
-  train_iters: 200000
+  train_iters: 270000
   # Number of training iterations after which to validate.
   validate_every: 100
   # Number of training iterations after which to checkpoint.
   save_every: 5000
   # Number of training iterations after which to print progress.
-  print_every: 100
+  print_every: 1000
 
 # Dataset parameters.
 dataset:
@@ -23,7 +23,7 @@ dataset:
   basedir: cache/nerf_synthetic/lego
   # Optionally, provide a path to the pre-cached dataset dir. This
   # overrides the other dataset options.
-  cachedir: cache/legocache200
+  cachedir: cache/legocache/legohalfres
   # For the Blender datasets (synthetic), optionally return images
   # at half the original resolution of 800 x 800, to save space.
   half_res: True

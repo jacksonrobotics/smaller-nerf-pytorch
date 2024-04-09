@@ -10,9 +10,67 @@ import yaml
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm, trange
 
+from torch import nn
+import torch.nn.utils.prune as prune
+import torch.nn.functional as F
+
 from nerf import (CfgNode, get_embedding_function, get_ray_bundle, img2mse,
                   load_blender_data, load_llff_data, meshgrid_xy, models,
                   mse2psnr, run_one_iter_of_nerf)
+
+def prune_by_percentage(layer, device, q=70.0):
+    """
+    Pruning the weight paramters by threshold.
+    :param q: pruning percentile. 'q' percent of the least
+    significant weight parameters will be pruned.
+    """
+    # Convert the weight of "layer" to numpy array
+    weights = layer.weight.data.cpu().detach().numpy()
+    # Compute the q-th percentile of the abs of the converted array
+    thresh = np.percentile(np.abs(weights), q)
+    # Generate a binary mask same shape as weight to decide which element to prune
+    mask = np.where(np.abs(weights) < thresh, 0, 1)
+    # Convert mask to torch tensor and put on GPU
+    mask = torch.tensor(mask).to(device)
+    # Multiply the weight by mask to perform pruning
+    fin = mask * torch.tensor(weights).to(device)
+    layer.weight.data = fin
+    return layer
+
+def global_prune_by_percentage(net, device, q=70.0):
+    """
+    Pruning the weight paramters by threshold.
+    :param q: pruning percentile. 'q' percent of the least
+    significant weight parameters will be pruned.
+    """
+    # A list to gather all the weights
+    flattened_weights = []
+    # Find global pruning threshold
+    for name,layer in net.named_modules():
+        if (isinstance(layer, nn.Conv2d) or isinstance(layer, nn.Linear)) and 'id_mapping' not in name:
+          # Convert weight to numpy
+          np_weight = layer.weight.data.cpu().detach().numpy().flatten()
+          # Flatten the weight and append to flattened_weights
+          flattened_weights.append(np_weight)
+
+    # Concate all weights into a np array
+    flattened_weights = np.concatenate(flattened_weights)
+    # Find global pruning threshold
+    thres = np.percentile(np.abs(flattened_weights), q)
+
+    # Apply pruning threshold to all layers
+    for name,layer in net.named_modules():
+        if (isinstance(layer, nn.Conv2d) or isinstance(layer, nn.Linear)) and 'id_mapping' not in name:
+            # Convert weight to numpy
+            weights = layer.weight.data.cpu().detach().numpy()
+            mask = np.where(np.abs(weights) < thres, 0, 1)
+            # Convert mask to torch tensor and put on GPU
+            mask = torch.tensor(mask).to(device)
+            # Multiply the weight by mask to perform pruning
+            fin = mask * torch.tensor(weights).to(device)
+            layer.weight.data = fin
+
+
 
 def main():
 
@@ -25,6 +83,11 @@ def main():
         type=str,
         default="",
         help="Path to load saved checkpoint from.",
+    )
+    parser.add_argument(
+        "--prune",
+        action="store_true",
+        help="Whether or not to prune the model (only if trained!)",
     )
     configargs = parser.parse_args()
 
@@ -48,6 +111,7 @@ def main():
             os.path.join(cfg.dataset.cachedir, "val", "*.data")
         )
         USE_CACHED_DATASET = True
+        print('using cached dataset!')
     else:
         # Load dataset
         images, poses, render_poses, hwf = None, None, None, None
@@ -173,7 +237,48 @@ def main():
 
         rgb_coarse, rgb_fine = None, None
         target_ray_values = None
+        
+        #%% TRAINING
+        # print(model_coarse)
+        # if model_fine is not None:
+        #     print(model_fine)
+
+        ## FIRST PART OF PRUNE
+        if configargs.prune:
+            # Example for pruning the coarse model
+            parameters_to_prune_coarse = [
+                (model_coarse.layer1, 'weight'),
+                # Add other layers but exclude fc_rgb, fc_alpha, fc_feat
+            ]
+
+            for layer in model_coarse.layers_xyz:
+                parameters_to_prune_coarse.append((layer, 'weight'))
+
+            
+
+            # # Repeat a similar process for the fine model if pruning
+            # parameters_to_prune_fine = [
+            #     (model_fine.layer1, 'weight'),
+            #     # Add other layers but exclude fc_rgb, fc_alpha, fc_feat
+            # ]
+
+            # Apply global unstructured pruning for each model separately
+            prune.global_unstructured(
+                parameters_to_prune_coarse,
+                pruning_method=prune.L1Unstructured,
+                amount=0.2,
+            )
+            print(f"PRUNING {len(parameters_to_prune_coarse)} layers in coarse model.")
+            # DONT PRUNE FINE YET
+            # if model_fine is not None:  # Check if the fine model is being used and should be pruned
+            #     prune.global_unstructured(
+            #         parameters_to_prune_fine,
+            #         pruning_method=prune.L1Unstructured,
+            #         amount=0.2,
+            #     )
+
         if USE_CACHED_DATASET:
+            print("USING CACHED DATASET")
             datafile = np.random.choice(train_paths)
             cache_dict = torch.load(datafile)
             ray_bundle = cache_dict["ray_bundle"].to(device)
@@ -181,7 +286,7 @@ def main():
                 ray_bundle[0].reshape((-1, 3)),
                 ray_bundle[1].reshape((-1, 3)),
             )
-            
+
             target_ray_values = cache_dict["target"][..., :3].reshape((-1, 3))
             select_inds = np.random.choice(
                 ray_origins.shape[0],
@@ -251,6 +356,8 @@ def main():
             fine_loss = torch.nn.functional.mse_loss(
                 rgb_fine[..., :3], target_ray_values[..., :3]
             )
+
+        #%% CALCULATE LOSS
         # loss = torch.nn.functional.mse_loss(rgb_pred[..., :3], target_s[..., :3])
         loss = 0.0
         # if fine_loss is not None:
@@ -265,15 +372,25 @@ def main():
 
         # Learning rate updates
         num_decay_steps = cfg.scheduler.lr_decay * 1000
-        lr_new = cfg.optimizer.lr * (
-            cfg.scheduler.lr_decay_factor ** (i / num_decay_steps)
-        )
+
+        if configargs.prune:
+            fine_tune_lr = cfg.optimizer.lr * 0.1
+            lr_new = fine_tune_lr * (
+                cfg.scheduler.lr_decay_factor ** (i / num_decay_steps)
+            )
+        else:
+            lr_new = cfg.optimizer.lr * (
+                cfg.scheduler.lr_decay_factor ** (i / num_decay_steps)
+            )
+        
         for param_group in optimizer.param_groups:
             param_group["lr"] = lr_new
 
+        pruneaddon = "PRUNING" if configargs.prune else ""
         if i % cfg.experiment.print_every == 0 or i == cfg.experiment.train_iters - 1:
             tqdm.write(
-                "[TRAIN] Iter: "
+                pruneaddon +
+                ": [TRAIN] Iter: "
                 + str(i)
                 + " Loss: "
                 + str(loss.item())
@@ -286,7 +403,7 @@ def main():
             writer.add_scalar("train/fine_loss", fine_loss.item(), i)
         writer.add_scalar("train/psnr", psnr, i)
 
-        # Validation
+        # %% Validation
         if (
             i % cfg.experiment.validate_every == 0
             or i == cfg.experiment.train_iters - 1
@@ -385,7 +502,7 @@ def main():
             }
             torch.save(
                 checkpoint_dict,
-                os.path.join(logdir, "checkpoint" + str(i).zfill(5) + ".ckpt"),
+                os.path.join(logdir, pruneaddon + "checkpoint" + str(i).zfill(5) + ".ckpt"),
             )
             tqdm.write("================== Saved Checkpoint =================")
 
