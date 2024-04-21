@@ -63,22 +63,16 @@ Optimizing a NeRF takes between a few hours and a day or two (depending on resol
 
 To train a "full" NeRF model (i.e., using 3D coordinates as well as ray directions, and the hierarchical sampling procedure), first setup dependencies. 
 
-### Option 1: Using pip
+### Using pip
 
-In a new `conda` or `virtualenv` environment, run
-
-```bash
-pip install -r requirements.txt
-```
-
-### Option 2: Using conda
-
-Use the provided `environment.yml` file to install the dependencies into an environment named `nerf` (edit the `environment.yml` if you wish to change the name of the `conda` environment).
+In a new `conda` or `virtualenv` environment with PYTHON 3.8, run
 
 ```bash
-conda env create
-conda activate nerf
+echo yes | pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118 && echo yes | pip install -r requirements.txt
 ```
+
+## THEN: GET THE DATA AND Create a folder called 'cache'
+[links to original dataset](http://cseweb.ucsd.edu/~viscomp/projects/LF/papers/ECCV20/nerf/nerf_example_data.zip)
 
 ### Run training!
 
