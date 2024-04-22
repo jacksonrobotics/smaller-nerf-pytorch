@@ -29,6 +29,24 @@ def cast_to_image(tensor, dataset_type):
     # # Map back to shape (3, H, W), as tensorboard needs channels first.
     # return np.moveaxis(img, [-1], [0])
 
+def load_pruned_state_dict(model, state_dict):
+    # Create a new state dictionary for loading
+    new_state_dict = {}
+    for key in list(state_dict.keys()):
+        if '_orig' in key:
+            # Find the corresponding mask key
+            mask_key = key.replace('_orig', '_mask')
+            # Apply the mask to the original weights
+            pruned_weights = state_dict[key] * state_dict[mask_key]
+            # Prepare the new key by removing '_orig' and update the new state dict
+            new_key = key.replace('_orig', '')
+            new_state_dict[new_key] = pruned_weights
+        elif '_mask' not in key:  # Ensure that masked keys without _orig are not added
+            new_state_dict[key] = state_dict[key]
+    # Load the updated state dict into the model
+    model.load_state_dict(new_state_dict)
+    model.eval()  # Set model to evaluation mode after loading
+
 
 def cast_to_disparity_image(tensor):
     img = (tensor - tensor.min()) / (tensor.max() - tensor.min())
@@ -113,7 +131,7 @@ def main():
     )
     model_coarse.to(device)
 
-    # If a fine-resolution model is specified, initialize it.
+    # Initialize the fine-resolution model if specified
     model_fine = None
     if hasattr(cfg.models, "fine"):
         model_fine = getattr(models, cfg.models.fine.type)(
@@ -125,40 +143,26 @@ def main():
         )
         model_fine.to(device)
 
+    # Load the checkpoint
     checkpoint = torch.load(configargs.checkpoint, map_location=device)
 
-    # Handle pruned parameters for coarse model
-    coarse_state_dict = checkpoint["model_coarse_state_dict"]
-    for key in list(coarse_state_dict.keys()):  # Use list to allow modifications during iteration
-        if '_orig' in key:
-            # Remove the suffix to match the expected key and apply the mask
-            new_key = key.replace('_orig', '')
-            mask_key = key.replace('_orig', '_mask')
-            coarse_state_dict[new_key] = coarse_state_dict[key] * coarse_state_dict[mask_key]
-            # Remove the original keys
-            del coarse_state_dict[key]
-            del coarse_state_dict[mask_key]
+    # Apply the function to load pruned state dicts
+    if "model_coarse_state_dict" in checkpoint:
+        load_pruned_state_dict(model_coarse, checkpoint["model_coarse_state_dict"])
 
-    model_coarse.load_state_dict(coarse_state_dict)
-
-    if "model_fine_state_dict" in checkpoint and checkpoint["model_fine_state_dict"]:
+    if model_fine and "model_fine_state_dict" in checkpoint:
         try:
-            model_fine.load_state_dict(checkpoint["model_fine_state_dict"])
+            load_pruned_state_dict(model_fine, checkpoint["model_fine_state_dict"])
         except Exception as e:
-            print(f"The checkpoint has a fine-level model, but it could not be loaded (possibly due to a mismatched config file): {str(e)}")
+            print(f"Error loading fine model: {str(e)}")
 
-    # Optional, loading other parameters
-    if "height" in checkpoint.keys():
+    # Load other relevant parameters if present
+    if "height" in checkpoint:
         hwf[0] = checkpoint["height"]
-    if "width" in checkpoint.keys():
+    if "width" in checkpoint:
         hwf[1] = checkpoint["width"]
-    if "focal_length" in checkpoint.keys():
+    if "focal_length" in checkpoint:
         hwf[2] = checkpoint["focal_length"]
-
-    # Set the models to eval mode after loading
-    model_coarse.eval()
-    if model_fine:
-        model_fine.eval()
 
     render_poses = render_poses.float().to(device)
 

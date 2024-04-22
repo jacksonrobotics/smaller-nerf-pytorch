@@ -71,7 +71,7 @@ In a new `conda` or `virtualenv` environment with PYTHON 3.8, run
 echo yes | pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118 && echo yes | pip install -r requirements.txt
 ```
 
-## THEN: GET THE DATA AND Create a folder called 'cache'
+## THEN: GET THE DATA (if not available on here) AND Create a folder called 'cache'. Put it in the main repo folder
 [links to original dataset](http://cseweb.ucsd.edu/~viscomp/projects/LF/papers/ECCV20/nerf/nerf_example_data.zip)
 
 ### Run training!
@@ -83,19 +83,13 @@ The training script can be invoked by running
 python train_nerf.py --config config/lego.yml
 ```
 
-### Optional: Prune after training
+### Optional: Resume training and/or prune after training
 
-To prune post-train:
+To resume training post-train:
 ```bash
-python train_nerf.py --config config/lego.yml --load-checkpoint path/to/checkpoint.ckpt --prune
+python train_nerf.py --config config/lego.yml --load-checkpoint path/to/checkpoint.ckpt --prune "coarse"
 ```
-
-### Optional: Resume training from a checkpoint
-
-Optionally, if resuming training from a previous checkpoint, run
-```bash
-python train_nerf.py --config config/lego.yml --load-checkpoint path/to/checkpoint.ckpt
-```
+--prune arguments are either "fine", "coarse", or "both"
 
 ### Optional: Cache rays from the dataset
 
@@ -107,6 +101,14 @@ python cache_dataset.py --datapath cache/nerf_synthetic/lego/ --halfres False --
 This samples `8192` rays per image from the `lego` dataset. Each image is `800 x 800` (since `halfres` is set to `False`), and `500` such random samples (`8192` rays each) are drawn per image. The script takes about 10 minutes to run, but the good thing is, this needs to be run only once per dataset.
 
 > **NOTE**: Do NOT forget to update the `cachedir` option (under `dataset`) in your config (.yml) file!
+
+### Optional: Don't let your monitor fall asleep!
+
+I included the caffeine.py file from [this brilliant repo](https://github.com/NicholasWalter/Caffeine). Open another window and just run 
+```bash
+python caffeine.py [interval]
+```
+In the smaller-nerf-pytorch directory to keep your screen on! If no interval is specified, it will send a CTRL key input every 60 seconds.
 
 
 ## (Full) NeRF on Google Colab
@@ -141,22 +143,6 @@ The code is thoroughly tested (to the best of my abilities) to match the origina
 * Every _individual_ module exactly (numerically) matches that of the TensorFlow implementation. [This Colab notebook](https://colab.research.google.com/drive/1ENrAtZIEhoeNkaXOXkBL7SbWU1VWHBQm) has all the tests, matching op for op (but is very scratchy to look at)!
 * Training works as expected (for Lego and LLFF scenes).
 
-The organization of code **WILL** change around a lot, because I'm actively experimenting with this.
-
-**Pretrained models**: Pretrained models for the following scenes are available in the `pretrained` directory (all of them are currently lowres). I will continue adding models herein.
-```
-# Synthetic (Blender) scenes
-chair
-drums
-hotdog
-lego
-materials
-ship
-
-# Real (LLFF) scenes
-fern
-```
-
 
 ## Contributing / Issues?
 
@@ -165,8 +151,10 @@ Feel free to raise GitHub issues if you find anything concerning. Pull requests 
 
 ## LICENSE
 
-`nerf-pytorch` is available under the [MIT License](https://opensource.org/licenses/MIT). For more details see: [LICENSE](LICENSE) and [ACKNOWLEDGEMENTS](ACKNOWLEDGEMENTS).
+`smaller-nerf-pytorch` is available under the [MIT License](https://opensource.org/licenses/MIT). For more details see: [LICENSE](LICENSE) and [ACKNOWLEDGEMENTS](ACKNOWLEDGEMENTS).
 
 ## Misc
+
+Of course, I couldn't have done this without the incredible [nerf-pytorch](https://github.com/krrish94/nerf-pytorch) repo by Krishna Murthy. Shoutout to the goat. Here's who he thanked:
 
 Also, a shoutout to [yenchenlin](https://github.com/yenchenlin) for his cool PyTorch [implementation](https://github.com/yenchenlin/nerf-pytorch), whose volume rendering function replaced mine (my initial impl was inefficient in comparison).

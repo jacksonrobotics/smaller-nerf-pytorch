@@ -43,8 +43,10 @@ def main():
     )
     parser.add_argument(
         "--prune",
-        action="store_true",
-        help="Whether or not to prune the model (only if trained!)",
+        type=str,
+        default = None,
+        choices=["coarse", "fine", "both"],
+        help="Specify which model to prune: 'coarse', 'fine', or 'both'."
     )
     configargs = parser.parse_args()
 
@@ -209,7 +211,7 @@ def main():
         target_ray_values = None
 
         #%% TRAINING
-        if configargs.prune:
+        if configargs.prune is not None: 
             #print('\n\n\n\n\n\nPRUNING')
             # Determine the current fraction of completed training
             total_iters = cfg.experiment.train_iters - start_iter
@@ -226,21 +228,22 @@ def main():
 
             # Apply structured pruning to each appropriate layer if the current iteration matches a pruning interval
             if current_progress in pruning_intervals:
-                for name, module in model_coarse.named_modules():
-                    if isinstance(module, (torch.nn.Conv2d, torch.nn.Linear)) and name not in excluded_layers:
-                        prune.ln_structured(module, name='weight', amount=current_prune_level, n=1, dim=0)
+                if configargs.prune == "coarse" or configargs.prune == "both":
+                    for name, module in model_coarse.named_modules():
+                        if isinstance(module, (torch.nn.Conv2d, torch.nn.Linear)) and name not in excluded_layers:
+                            prune.ln_structured(module, name='weight', amount=current_prune_level, n=1, dim=0)
 
-                        # Log the pruned weights
-                    for param_tensor in module.named_parameters():
-                        param_name, param_value = param_tensor
-                        if 'weight' in param_name:  # Ensure only weights are logged
-                            writer.add_histogram(f"{name}/{param_name}", param_value, i)
-                            writer.flush()
-                            
-                        print(f'Pruned {name} to {current_prune_level * 100:.2f}% at {current_progress * 100:.1f}% of training')
+                            # Log the pruned weights
+                            for param_tensor in module.named_parameters():
+                                param_name, param_value = param_tensor
+                                if 'weight' in param_name:  # Ensure only weights are logged
+                                    writer.add_histogram(f"{name}/{param_name}", param_value, i)
+                                    writer.flush()
+                                
+                            print(f'Pruned coarse {name} to {current_prune_level * 100:.2f}% at {current_progress * 100:.1f}% of training')
 
                 # Pruning the fine model
-                if model_fine:  # Check if there is a fine model defined
+                if configargs.prune == "fine" or configargs.prune == "both":  # Check if there is a fine model defined
                     for name, module in model_fine.named_modules():
                         if isinstance(module, (torch.nn.Conv2d, torch.nn.Linear)) and name not in excluded_layers:
                             prune.ln_structured(module, name='weight', amount=current_prune_level, n=1, dim=0)
@@ -251,7 +254,7 @@ def main():
                                 if 'weight' in param_name:  # Ensure only weights are logged
                                     writer.add_histogram(f"{name}/{param_name}", param_value, i)
                                     writer.flush()
-                            print(f'Pruned {name} to {current_prune_level * 100:.2f}% at {current_progress * 100:.1f}% of training')
+                            print(f'Pruned fine {name} to {current_prune_level * 100:.2f}% at {current_progress * 100:.1f}% of training')
  
 
         if USE_CACHED_DATASET:
@@ -350,7 +353,7 @@ def main():
         # Learning rate updates
         num_decay_steps = cfg.scheduler.lr_decay * 1000
 
-        if configargs.prune:
+        if configargs.prune is not None:
             fine_tune_lr = cfg.optimizer.lr * 0.1
             lr_new = fine_tune_lr * (
                 cfg.scheduler.lr_decay_factor ** (i / num_decay_steps)
@@ -363,7 +366,7 @@ def main():
         for param_group in optimizer.param_groups:
             param_group["lr"] = lr_new
 
-        pruneaddon = "PRUNING" if configargs.prune else ""
+        pruneaddon = "PRUNING" if configargs.prune is not None else ""
         if i % cfg.experiment.print_every == 0 or i == cfg.experiment.train_iters - 1:
             tqdm.write(
                 pruneaddon +
