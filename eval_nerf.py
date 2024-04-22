@@ -125,16 +125,29 @@ def main():
         )
         model_fine.to(device)
 
-    checkpoint = torch.load(configargs.checkpoint)
-    model_coarse.load_state_dict(checkpoint["model_coarse_state_dict"])
-    if checkpoint["model_fine_state_dict"]:
+    checkpoint = torch.load(configargs.checkpoint, map_location=device)
+
+    # Handle pruned parameters for coarse model
+    coarse_state_dict = checkpoint["model_coarse_state_dict"]
+    for key in list(coarse_state_dict.keys()):  # Use list to allow modifications during iteration
+        if '_orig' in key:
+            # Remove the suffix to match the expected key and apply the mask
+            new_key = key.replace('_orig', '')
+            mask_key = key.replace('_orig', '_mask')
+            coarse_state_dict[new_key] = coarse_state_dict[key] * coarse_state_dict[mask_key]
+            # Remove the original keys
+            del coarse_state_dict[key]
+            del coarse_state_dict[mask_key]
+
+    model_coarse.load_state_dict(coarse_state_dict)
+
+    if "model_fine_state_dict" in checkpoint and checkpoint["model_fine_state_dict"]:
         try:
             model_fine.load_state_dict(checkpoint["model_fine_state_dict"])
-        except:
-            print(
-                "The checkpoint has a fine-level model, but it could "
-                "not be loaded (possibly due to a mismatched config file."
-            )
+        except Exception as e:
+            print(f"The checkpoint has a fine-level model, but it could not be loaded (possibly due to a mismatched config file): {str(e)}")
+
+    # Optional, loading other parameters
     if "height" in checkpoint.keys():
         hwf[0] = checkpoint["height"]
     if "width" in checkpoint.keys():
@@ -142,6 +155,7 @@ def main():
     if "focal_length" in checkpoint.keys():
         hwf[2] = checkpoint["focal_length"]
 
+    # Set the models to eval mode after loading
     model_coarse.eval()
     if model_fine:
         model_fine.eval()

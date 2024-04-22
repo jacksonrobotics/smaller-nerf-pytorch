@@ -128,8 +128,8 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
-/cache
-/logs
+#/cache
+#/logs
 /data
 
 

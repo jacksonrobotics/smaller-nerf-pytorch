@@ -123,7 +123,7 @@ python eval_nerf.py --config pretrained/lego-lowres/config.yml --checkpoint pret
 
 You can create a `gif` out of the saved images, for instance, by using [Imagemagick](https://imagemagick.org/).
 ```bash
-convert cache/rendered/lego-lowres/*.png cache/rendered/lego-lowres.gif
+python makegif.py cache/rendered/lego-lowres
 ```
 
 This should give you a gif like this.
