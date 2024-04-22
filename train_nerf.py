@@ -239,6 +239,21 @@ def main():
                             
                         print(f'Pruned {name} to {current_prune_level * 100:.2f}% at {current_progress * 100:.1f}% of training')
 
+                # Pruning the fine model
+                if model_fine:  # Check if there is a fine model defined
+                    for name, module in model_fine.named_modules():
+                        if isinstance(module, (torch.nn.Conv2d, torch.nn.Linear)) and name not in excluded_layers:
+                            prune.ln_structured(module, name='weight', amount=current_prune_level, n=1, dim=0)
+                            
+                            # Log the pruned weights
+                            for param_tensor in module.named_parameters():
+                                param_name, param_value = param_tensor
+                                if 'weight' in param_name:  # Ensure only weights are logged
+                                    writer.add_histogram(f"{name}/{param_name}", param_value, i)
+                                    writer.flush()
+                            print(f'Pruned {name} to {current_prune_level * 100:.2f}% at {current_progress * 100:.1f}% of training')
+ 
+
         if USE_CACHED_DATASET:
             #print("USING CACHED DATASET")
             datafile = np.random.choice(train_paths)
