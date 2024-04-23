@@ -48,6 +48,12 @@ def main():
         choices=["coarse", "fine", "both"],
         help="Specify which model to prune: 'coarse', 'fine', or 'both'."
     )
+    # parser.add_argument(
+    # "--quantization",
+    # type=str,
+    # default = None,
+    # help="Specify bit quantization as integers 8 to 1."
+    # )
     configargs = parser.parse_args()
 
     # Read config file.
